@@ -109,3 +109,4 @@ target/
 /.idea/
 !/shiro-spring.iml
 !/.idea/
+!/target/
