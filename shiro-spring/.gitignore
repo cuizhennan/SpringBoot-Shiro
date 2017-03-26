@@ -110,3 +110,4 @@ target/
 !/shiro-spring.iml
 !/.idea/
 !/target/
+shiro-spring.iml
