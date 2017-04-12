@@ -5,13 +5,13 @@
     <artifactId>shiro-spring</artifactId>
     <packaging>war</packaging>
     <version>1.0-SNAPSHOT</version>
-    <name>shiro-spring Maven Webapp</name>
+    <name>shiro-spring</name>
     <url>http://maven.apache.org</url>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.locales>zh_CN</project.build.locales>
-        <project.build.jdk>1.8</project.build.jdk>
+        <project.build.jdk>1.7</project.build.jdk>
 
         <spring.version>4.3.7.RELEASE</spring.version>
         <jackson.version>2.6.5</jackson.version>
