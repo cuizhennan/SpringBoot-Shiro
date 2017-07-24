@@ -70,11 +70,9 @@ public class SimpleCanalClientExample {
             }
 
             CanalEntry.EventType eventType = rowChage.getEventType();
-            System.out.println(String.format("================&gt; binlog[%s:%s] , name[%s,%s] , eventType : %s",
+            System.out.println(String.format("================> binlog[%s:%s] , name[%s,%s] , eventType : %s",
                     entry.getHeader().getLogfileName(), entry.getHeader().getLogfileOffset(),
                     entry.getHeader().getSchemaName(), entry.getHeader().getTableName(), eventType));
-
-            System.out.println(String.format("sql: %s", rowChage.getSql()));
 
             for (CanalEntry.RowData rowData : rowChage.getRowDatasList()) {
                 if (eventType == CanalEntry.EventType.DELETE) {
@@ -82,9 +80,9 @@ public class SimpleCanalClientExample {
                 } else if (eventType == CanalEntry.EventType.INSERT) {
                     printColumn(rowData.getAfterColumnsList());
                 } else {
-                    System.out.println("-------&gt; before");
+                    System.out.println("-------> before");
                     printColumn(rowData.getBeforeColumnsList());
-                    System.out.println("-------&gt; after");
+                    System.out.println("-------> after");
                     printColumn(rowData.getAfterColumnsList());
                 }
             }
