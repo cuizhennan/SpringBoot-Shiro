@@ -1,0 +1,361 @@
+package com.jd.o2o.orderdiscount.web.controller;
+
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.jd.common.util.StringUtils;
+import com.jd.o2o.commons.springmvc.ext.bind.annotation.RequestJsonParam;
+import com.jd.o2o.orderdiscount.domain.util.ChineseUtill;
+import com.jd.o2o.orderdiscount.hackathon.RequestCoupons;
+import org.apache.commons.lang.math.NumberUtils;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Project: o2o-orderdiscount
+ * Package: com.jd.o2o.orderdiscount.web.controller
+ * User: @CZN 2017/10/23 13:05
+ * Use: 只有预发环境有 hackathon 专用
+ */
+@Controller
+@RequestMapping("/hackathon")
+public class HackathonController {
+
+    /*
+     * 劵池子
+     * JSONObject 结构
+     *
+     * couponId: 23423
+     * couponName:"劵名称"
+     * couponDesc:"满20件10",
+     * couponPrice: 10,
+     * couponLimit: 20,
+     * pinId: 12341
+     * state:  劵状态（0：无效劵，1：有效劵）
+     * created: 时间戳
+     * updated: 时间戳
+     */
+    private static ConcurrentHashMap<Long, JSONObject> couponsMap = new ConcurrentHashMap<Long, JSONObject>();
+
+    /*
+     *用户池子
+     * JSONObject 结构
+     *
+     * pinId: 123123
+     * couponSize: 5
+     * pinName: 阿斯蒂芬
+     */
+    private static ConcurrentHashMap<String, JSONObject> pinsMap = new ConcurrentHashMap<String, JSONObject>();
+
+    /*
+     * pinId-劵IDs
+     * 一个pin对应的多个劵ID
+     */
+    private static ConcurrentHashMap<Long, List<Long>> pinAndCouponsMap = new ConcurrentHashMap<Long, List<Long>>();
+
+    private static String coupon_desc_01 = "满%s减%s";
+
+    @RequestMapping("/test")
+    @ResponseBody
+    public String defaultTest() {
+        return "success";
+    }
+
+    @RequestMapping("/coupons")
+    @ResponseBody
+    public String getCoupons(@RequestJsonParam("body") RequestCoupons requestCoupons) {
+        JSONObject resultJson = new JSONObject();
+
+        if (StringUtils.isBlank(requestCoupons.getSrc())) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "参数有误");
+            return resultJson.toJSONString();
+        }
+
+//        if (!pinsMap.containsKey(requestCoupons.getSrc())) {
+//            resultJson.put("success", false);
+//            resultJson.put("msg", "用户不存在");
+//            return resultJson.toJSONString();
+//        }
+
+//        if (requestCoupons.getSrc().trim().equals("WX_20ed3fbbda4f8e3")) {
+//            randomPinCoupon(requestCoupons.getSrc(), "5");
+//        }
+
+        if (!pinsMap.containsKey(requestCoupons.getSrc())) {
+            randomPinCoupon(requestCoupons.getSrc(), "3");
+        }
+
+        JSONArray jsonArray = new JSONArray();
+
+        JSONObject pinJson = pinsMap.get(requestCoupons.getSrc());
+        Long pinId = pinJson.getLong("pinId");
+        if (pinAndCouponsMap.containsKey(pinId)) {
+            List<Long> couponIds = pinAndCouponsMap.get(pinId);
+            for (Long couponId : couponIds) {
+                if (couponsMap.containsKey(couponId) && couponsMap.get(couponId).getInteger("state").intValue() == 1) {
+                    jsonArray.add(couponsMap.get(couponId));
+                }
+            }
+        }
+
+        resultJson.put("success", true);
+        resultJson.put("msg", "成功");
+        resultJson.put("result", jsonArray);
+        return resultJson.toJSONString();
+    }
+
+    /*
+     * 分享成功之后，调这个接口 ，进行解绑，返回 新劵给src
+     *
+//     * @param couponId
+//     * @param src
+     * @return
+     */
+//    public String forkCoupon(@PathVariable("couponId") String couponId, @RequestParam("src") String src) {
+    @RequestMapping("/fork")
+    @ResponseBody
+    public String forkCoupon(@RequestJsonParam("body") RequestCoupons requestCoupons) {
+        JSONObject resultJson = new JSONObject();
+
+        if (StringUtils.isBlank(requestCoupons.getSrc()) || StringUtils.isBlank(requestCoupons.getCouponId() + "") || !NumberUtils.isNumber(requestCoupons.getCouponId() + "")) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "参数有误");
+            return resultJson.toJSONString();
+        }
+        if (!pinsMap.containsKey(requestCoupons.getSrc())) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "用户不存在");
+            return resultJson.toJSONString();
+        }
+        if (!couponsMap.containsKey(Long.valueOf(requestCoupons.getCouponId() + ""))) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "劵不存在");
+            return resultJson.toJSONString();
+        }
+        JSONObject pinObj = pinsMap.get(requestCoupons.getSrc());
+
+        Long pinId = pinObj.getLong("pinId");
+        //解绑
+        List<Long> couponIds = pinAndCouponsMap.get(pinId);
+        Iterator<Long> listIt = couponIds.iterator();
+        long couponIdreal = 0L;
+
+        while (listIt.hasNext()) {
+            couponIdreal = listIt.next();
+            if (couponIdreal == Long.valueOf(requestCoupons.getCouponId() + "")) {
+                listIt.remove();
+                break;
+            }
+        }
+        JSONObject oldCoupons = couponsMap.get(couponIdreal);
+        if (oldCoupons != null) {
+            oldCoupons.put("state", 0);
+            couponsMap.put(couponIdreal, oldCoupons);
+        }
+
+        //更新 pin池子
+        pinObj.put("couponSize", couponIds.size());
+        pinsMap.put(requestCoupons.getSrc(), pinObj);
+
+        //更新pin-劵ID 池子
+        Map<Long, JSONObject> randomCoupon = randomCoupon(1, pinId, "奖励劵", true);
+        couponIds.addAll(randomCoupon.keySet());
+        pinAndCouponsMap.put(pinId, couponIds);
+
+        //更新 劵池子
+        for (Long couponIdnew : randomCoupon.keySet()) {
+            couponsMap.put(couponIdnew, randomCoupon.get(couponIdnew));
+        }
+
+        resultJson.put("success", true);
+        resultJson.put("msg", "成功");
+        resultJson.put("result", randomCoupon.values().iterator().next());
+        return resultJson.toJSONString();
+    }
+
+    /*
+     * 领卷
+     *
+//     * @param couponId
+//     * @param dist
+     * @return
+     */
+//    public String getCouponInfo(@PathVariable("couponId") String couponId, @RequestParam("dist") String dist) {
+    @RequestMapping("/coupon")
+    @ResponseBody
+    public String getCouponInfo(@RequestJsonParam("body") RequestCoupons requestCoupons) {
+        JSONObject resultJson = new JSONObject();
+
+        if (StringUtils.isBlank(requestCoupons.getDist()) || StringUtils.isBlank(requestCoupons.getCouponId() + "") || !NumberUtils.isNumber(requestCoupons.getCouponId() + "")) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "参数有误");
+            return resultJson.toJSONString();
+        }
+        if (!couponsMap.containsKey(Long.valueOf(requestCoupons.getCouponId() + ""))) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "劵不存在");
+            return resultJson.toJSONString();
+        }
+
+        if (!pinsMap.containsKey(requestCoupons.getDist())) {
+//            resultJson.put("success", false);
+//            resultJson.put("msg", "用户不存在");
+//            return resultJson.toJSONString();
+            randomPinCoupon(requestCoupons.getDist(), "3");
+        }
+
+        JSONObject coupon = couponsMap.get(Long.valueOf(requestCoupons.getCouponId() + ""));
+//        if (coupon.getInteger("state").intValue() == 1) {
+//            resultJson.put("success", false);
+//            resultJson.put("msg", "领卷操作不合法");
+//            return resultJson.toJSONString();
+//        }
+
+        JSONObject pin = pinsMap.get(requestCoupons.getDist());
+        Long pinId = pin.getLong("pinId");
+        //更新劵 状态
+        coupon.put("state", 1);
+        coupon.put("pinId", pinId);
+        coupon.put("updated", new Date().getTime());
+        couponsMap.put(Long.valueOf(requestCoupons.getCouponId() + ""), coupon);
+
+        //更新 pinId-劵Ids 池子
+        List<Long> listCouponIds = pinAndCouponsMap.get(pinId);
+        listCouponIds.add(Long.valueOf(requestCoupons.getCouponId() + ""));
+        pinAndCouponsMap.put(pinId, listCouponIds);
+
+        //更新 pin池子
+        pin.put("couponSize", listCouponIds.size());
+        pinsMap.put(requestCoupons.getDist(), pin);
+
+        resultJson.put("success", true);
+        resultJson.put("msg", "成功");
+        resultJson.put("result", coupon);
+        return resultJson.toJSONString();
+    }
+
+    @RequestMapping("/random/coupons")
+    @ResponseBody
+    public String randomPinCoupon(@RequestParam("src") String src, @RequestParam("genSize") String genSize) {
+        JSONObject resultJson = new JSONObject();
+
+        if (StringUtils.isBlank(src) || StringUtils.isBlank(genSize) || !NumberUtils.isNumber(genSize)) {
+            resultJson.put("success", false);
+            resultJson.put("msg", "参数有误");
+            return resultJson.toJSONString();
+        }
+
+        Long pinId = 0L;
+        if (pinsMap.containsKey(src)) {
+            JSONObject pinObj = pinsMap.get(src);
+            pinId = pinObj.getLong("pinId");
+            Map<Long, JSONObject> randomCoupons = randomCoupon(Integer.parseInt(genSize), pinId, "优惠卷", true);
+            //更新pin-劵IDs 池子
+            List<Long> list = pinAndCouponsMap.get(pinId);
+            list.addAll(randomCoupons.keySet());
+            pinAndCouponsMap.put(pinId, list);
+            //更新 劵池子
+            for (Long couponIdnew : randomCoupons.keySet()) {
+                couponsMap.put(couponIdnew, randomCoupons.get(couponIdnew));
+            }
+            //更新 pin信息
+            pinObj.put("size", list.size());
+            pinsMap.put(src, pinObj);
+        } else {
+            while (true) {
+                Long newPinId = new Random().nextLong();
+                if (!pinAndCouponsMap.containsKey(newPinId) && !pinsMap.containsKey(src)) {
+                    Map<Long, JSONObject> newRandoms = randomCoupon(Integer.parseInt(genSize), newPinId, "优惠劵", false);
+
+                    //更新 pin信息
+                    JSONObject jsonObject = new JSONObject();
+                    jsonObject.put("pinId", pinId);
+                    jsonObject.put("pinName", src);
+                    jsonObject.put("couponSize", newRandoms.keySet().size());
+                    pinsMap.put(src, jsonObject);
+
+                    //更新pin-劵IDs 池子
+                    List<Long> list = new ArrayList<Long>();
+                    list.addAll(newRandoms.keySet());
+                    pinAndCouponsMap.put(pinId, list);
+
+                    //更新 劵池子
+                    for (Long couponnewId : newRandoms.keySet()) {
+                        couponsMap.put(couponnewId, newRandoms.get(couponnewId));
+                    }
+                    break;
+                }
+            }
+        }
+
+        JSONArray jsonArray = new JSONArray();
+        List<Long> couponsIds = pinAndCouponsMap.get(pinId);
+        for (long couponId : couponsIds) {
+            jsonArray.add(couponsMap.get(couponId));
+        }
+
+        resultJson.put("success", true);
+        resultJson.put("msg", "成功");
+        resultJson.put("result", jsonArray);
+        return resultJson.toJSONString();
+    }
+
+    @RequestMapping("/coupon/info/{couponId}")
+    @ResponseBody
+    public String getCouponInfo(@PathVariable("couponId") String couponId) {
+        JSONObject resultJson = new JSONObject();
+        resultJson.put("success", true);
+        resultJson.put("msg", "成功");
+        resultJson.put("result", couponsMap.get(Long.valueOf(couponId)));
+        return resultJson.toJSONString();
+    }
+
+
+    @RequestMapping("/coupon/clear")
+    @ResponseBody
+    public String clearHackathon() {
+        pinsMap.clear();
+        pinAndCouponsMap.clear();
+        couponsMap.clear();
+        return "success";
+    }
+
+    private Map<Long, JSONObject> randomCoupon(int randomSzie, Long pinId, String couponName, boolean isChenkPin) {
+        Map<Long, JSONObject> resultRandoms = new HashMap<Long, JSONObject>();
+
+        int couponId = new Random().nextInt(10000);
+        int tempIndex = 0;
+        do {
+            if (!couponsMap.containsKey(couponId) && !resultRandoms.containsKey(couponId)) {
+                if (pinAndCouponsMap.containsKey(pinId) && pinAndCouponsMap.get(pinId).contains(couponId)) {
+                    continue;
+                }
+
+                int couponPrice = new Random().nextInt(180);
+                int couponLimit = new Random().nextInt(500);
+                if (couponLimit < couponPrice || couponPrice < 1) {
+                    continue;
+                }
+
+                JSONObject coupon = new JSONObject();
+                coupon.put("couponId", couponId);
+                coupon.put("couponName", couponName);
+                coupon.put("couponPrice", couponPrice);
+                coupon.put("couponLimit", couponLimit);
+                coupon.put("couponDesc", String.format(coupon_desc_01, couponLimit, couponPrice));
+                coupon.put("state", 1);
+                coupon.put("created", new Date().getTime());
+
+
+                resultRandoms.put(Long.valueOf(couponId), coupon);
+                tempIndex++;
+
+                couponId = new Random().nextInt(10000);
+            }
+        } while (tempIndex < randomSzie);
+        return resultRandoms;
+    }
+}
